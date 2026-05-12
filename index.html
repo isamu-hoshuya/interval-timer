@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>作業ペースタイマー</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: #1a1a2e;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    transition: background 0.3s;
+  }
+  body.flash {
+    background: #ff6b35;
+  }
+  .container {
+    max-width: 600px;
+    width: 100%;
+    text-align: center;
+  }
+  h1 {
+    font-size: 1.8rem;
+    margin-bottom: 20px;
+    font-weight: 300;
+    letter-spacing: 2px;
+  }
+  .timer-display {
+    font-size: 8rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin: 20px 0;
+    color: #fff;
+    text-shadow: 0 0 30px rgba(255,255,255,0.3);
+  }
+  .timer-display.warning {
+    color: #ffcc00;
+  }
+  .timer-display.danger {
+    color: #ff4444;
+  }
+  .stats {
+    display: flex;
+    justify-content: space-around;
+    margin: 20px 0;
+    font-size: 1.1rem;
+  }
+  .stats div {
+    background: rgba(255,255,255,0.1);
+    padding: 12px 20px;
+    border-radius: 8px;
+    min-width: 120px;
+  }
+  .stats .label {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .stats .value {
+    font-size: 1.8rem;
+    font-weight: 700;
+  }
+  .controls {
+    margin: 30px 0;
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  button {
+    font-size: 1.1rem;
+    padding: 14px 28px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: transform 0.1s, opacity 0.2s;
+    font-family: inherit;
+  }
+  button:active { transform: scale(0.96); }
+  .btn-start { background: #4caf50; color: #fff; }
+  .btn-pause { background: #ff9800; color: #fff; }
+  .btn-reset { background: #f44336; color: #fff; }
+  .btn-count { background: #2196f3; color: #fff; font-size: 1.3rem; padding: 18px 40px; }
+  .settings {
+    background: rgba(255,255,255,0.05);
+    padding: 20px;
+    border-radius: 12px;
+    margin-top: 20px;
+  }
+  .settings h2 {
+    font-size: 1rem;
+    margin-bottom: 12px;
+    opacity: 0.8;
+    font-weight: 400;
+  }
+  .setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 10px 0;
+    gap: 10px;
+  }
+  .setting-row label {
+    font-size: 0.95rem;
+    opacity: 0.9;
+  }
+  .setting-row input {
+    width: 100px;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(0,0,0,0.3);
+    color: #fff;
+    font-size: 1rem;
+    text-align: center;
+    font-family: inherit;
+  }
+  .pace-info {
+    margin-top: 10px;
+    font-size: 0.85rem;
+    opacity: 0.7;
+  }
+  .status {
+    font-size: 1.2rem;
+    margin: 10px 0;
+    height: 30px;
+    color: #ffcc00;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>作業ペースタイマー</h1>
+  <div class="status" id="status">準備完了</div>
+  <div class="timer-display" id="timer">01:12</div>
+  <div class="stats">
+    <div>
+      <span class="label">完成数</span>
+      <span class="value" id="count">0</span>
+    </div>
+    <div>
+      <span class="label">経過時間</span>
+      <span class="value" id="elapsed">00:00</span>
+    </div>
+    <div>
+      <span class="label">時間あたり</span>
+      <span class="value" id="rate">0</span>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="btn-count" id="countBtn">+1 完成</button>
+  </div>
+  <div class="controls">
+    <button class="btn-start" id="startBtn">スタート</button>
+    <button class="btn-pause" id="pauseBtn">一時停止</button>
+    <button class="btn-reset" id="resetBtn">リセット</button>
+  </div>
+  <div class="settings">
+    <h2>設定</h2>
+    <div class="setting-row">
+      <label>1時間あたりの目標個数</label>
+      <input type="number" id="targetPerHour" value="50" min="1" max="600">
+    </div>
+    <div class="setting-row">
+      <label>1個あたりの秒数 (自動計算)</label>
+      <input type="number" id="intervalSec" value="72" min="5" max="3600">
+    </div>
+    <div class="pace-info" id="paceInfo">1個72秒ペース / 4時間で200個</div>
+  </div>
+</div>
+
+<script>
+  // === 状態 ===
+  let intervalSec = 72;
+  let remaining = 72;
+  let elapsedSec = 0;
+  let count = 0;
+  let running = false;
+  let tickHandle = null;
+  let audioCtx = null;
+
+  // === DOM ===
+  const $timer = document.getElementById('timer');
+  const $count = document.getElementById('count');
+  const $elapsed = document.getElementById('elapsed');
+  const $rate = document.getElementById('rate');
+  const $status = document.getElementById('status');
+  const $startBtn = document.getElementById('startBtn');
+  const $pauseBtn = document.getElementById('pauseBtn');
+  const $resetBtn = document.getElementById('resetBtn');
+  const $countBtn = document.getElementById('countBtn');
+  const $target = document.getElementById('targetPerHour');
+  const $interval = document.getElementById('intervalSec');
+  const $paceInfo = document.getElementById('paceInfo');
+
+  // === 音 ===
+  function ensureAudio() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function beep(freq = 880, duration = 0.25, type = 'sine', volume = 0.4) {
+    ensureAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  }
+  function bellSound() {
+    // 区切りの「ピーッ」音 - 高めの2連音
+    beep(1000, 0.2, 'square', 0.5);
+    setTimeout(() => beep(1200, 0.4, 'square', 0.5), 220);
+  }
+  function warningSound() {
+    beep(600, 0.1, 'sine', 0.3);
+  }
+
+  // === 表示 ===
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+  function updateDisplay() {
+    $timer.textContent = formatTime(Math.max(0, remaining));
+    $elapsed.textContent = formatTime(elapsedSec);
+    $count.textContent = count;
+    const hourlyRate = elapsedSec > 0 ? Math.round(count / (elapsedSec / 3600)) : 0;
+    $rate.textContent = hourlyRate;
+
+    $timer.classList.remove('warning', 'danger');
+    if (remaining <= 5) $timer.classList.add('danger');
+    else if (remaining <= 15) $timer.classList.add('warning');
+  }
+  function updatePaceInfo() {
+    const target = parseInt($target.value) || 50;
+    intervalSec = Math.round(3600 / target);
+    $interval.value = intervalSec;
+    $paceInfo.textContent = `1個${intervalSec}秒ペース / 1時間で${target}個`;
+    if (!running) {
+      remaining = intervalSec;
+      updateDisplay();
+    }
+  }
+  function updateFromInterval() {
+    intervalSec = parseInt($interval.value) || 72;
+    const target = Math.round(3600 / intervalSec);
+    $target.value = target;
+    $paceInfo.textContent = `1個${intervalSec}秒ペース / 1時間で${target}個`;
+    if (!running) {
+      remaining = intervalSec;
+      updateDisplay();
+    }
+  }
+
+  // === タイマー ===
+  function tick() {
+    elapsedSec++;
+    remaining--;
+    if (remaining <= 0) {
+      // 区切り音
+      bellSound();
+      document.body.classList.add('flash');
+      setTimeout(() => document.body.classList.remove('flash'), 600);
+      remaining = intervalSec;
+      $status.textContent = '次の1個をスタート！';
+      setTimeout(() => { if (running) $status.textContent = '作業中...'; }, 2000);
+    } else if (remaining === 10) {
+      warningSound();
+      $status.textContent = 'あと10秒！';
+    } else if (remaining === 5) {
+      warningSound();
+    }
+    updateDisplay();
+  }
+
+  function start() {
+    if (running) return;
+    ensureAudio();
+    running = true;
+    $status.textContent = '作業中...';
+    tickHandle = setInterval(tick, 1000);
+  }
+  function pause() {
+    running = false;
+    $status.textContent = '一時停止中';
+    if (tickHandle) clearInterval(tickHandle);
+    tickHandle = null;
+  }
+  function reset() {
+    pause();
+    elapsedSec = 0;
+    count = 0;
+    remaining = intervalSec;
+    $status.textContent = '準備完了';
+    updateDisplay();
+  }
+
+  // === イベント ===
+  $startBtn.addEventListener('click', start);
+  $pauseBtn.addEventListener('click', pause);
+  $resetBtn.addEventListener('click', reset);
+  $countBtn.addEventListener('click', () => {
+    count++;
+    beep(440, 0.1, 'sine', 0.2);
+    updateDisplay();
+  });
+  $target.addEventListener('input', updatePaceInfo);
+  $interval.addEventListener('input', updateFromInterval);
+
+  // スペースキーでカウント
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      $countBtn.click();
+    } else if (e.code === 'Enter') {
+      e.preventDefault();
+      if (running) pause(); else start();
+    }
+  });
+
+  // 初期化
+  updatePaceInfo();
+  updateDisplay();
+</script>
+</body>
+</html>
